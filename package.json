@@ -1,0 +1,15 @@
+{
+  "name": "dealer-mobil-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "E2E test suite (Playwright) untuk sistem dealer mobil PT Yang Penting Jalan",
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1"
+  }
+}
