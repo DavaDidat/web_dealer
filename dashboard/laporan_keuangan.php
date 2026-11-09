@@ -1,17 +1,21 @@
 <?php
 require_once '../config/database.php';
+require_once '../includes/dashboard_data.php';
 
 cek_role(['owner']);
 
 $bulan = $_GET['bulan'] ?? date('Y-m');
+if (!ypj_valid_month($bulan)) {
+    $bulan = date('Y-m');
+}
 
 $stmt_sparepart = $pdo->prepare("
     SELECT COALESCE(SUM(total), 0) as total_sparepart
     FROM transaksi_sparepart
-    WHERE DATE_FORMAT(waktu, '%Y-%m') = ? AND status != 'dibatalkan'
+    WHERE DATE_FORMAT(waktu, '%Y-%m') = ? AND status <> 'dibatalkan'
 ");
 $stmt_sparepart->execute([$bulan]);
-$total_sparepart = $stmt_sparepart->fetchColumn();
+$total_sparepart = (float)$stmt_sparepart->fetchColumn();
 
 $stmt_servis = $pdo->prepare("
     SELECT COUNT(*) as total_servis
@@ -19,7 +23,7 @@ $stmt_servis = $pdo->prepare("
     WHERE DATE_FORMAT(waktu_mulai, '%Y-%m') = ? AND status = 'selesai'
 ");
 $stmt_servis->execute([$bulan]);
-$total_servis = $stmt_servis->fetchColumn();
+$total_servis = (int)$stmt_servis->fetchColumn();
 
 $stmt_jasa = $pdo->prepare("
     SELECT COALESCE(SUM(biaya_jasa), 0) as total_jasa
@@ -36,7 +40,7 @@ $stmt_mobil = $pdo->prepare("
     WHERE DATE_FORMAT(p.waktu, '%Y-%m') = ? AND p.status = 'selesai'
 ");
 $stmt_mobil->execute([$bulan]);
-$total_mobil = $stmt_mobil->fetchColumn();
+$total_mobil = (float)$stmt_mobil->fetchColumn();
 
 $total_keseluruhan = $total_sparepart + $total_mobil + $total_jasa;
 
@@ -46,7 +50,7 @@ $stmt_weekly = $pdo->prepare("
         'sparepart' as tipe,
         total as jumlah
     FROM transaksi_sparepart
-    WHERE DATE_FORMAT(waktu, '%Y-%m') = ? AND status != 'dibatalkan'
+    WHERE DATE_FORMAT(waktu, '%Y-%m') = ? AND status <> 'dibatalkan'
     UNION ALL
     SELECT
         DATE_FORMAT(p.waktu, '%Y-%m-%d') as tanggal,
@@ -75,7 +79,7 @@ require_once '../includes/header.php';
         <h2>Laporan Keuangan</h2>
         <form method="GET" action="" style="display: flex; gap: 0.5rem; align-items: center;">
             <label style="font-weight: 500;">Bulan:</label>
-            <input type="month" name="bulan" value="<?= $bulan ?>" style="padding: 0.5rem; border: 1px solid #C4CBD8; border-radius: 8px;">
+            <input type="month" name="bulan" value="<?= htmlspecialchars($bulan) ?>" style="padding: 0.5rem; border: 1px solid #C4CBD8; border-radius: 8px;">
             <button type="submit" class="btn" style="padding: 0.5rem 1rem;">Tampilkan</button>
         </form>
     </div>
@@ -83,15 +87,15 @@ require_once '../includes/header.php';
     <div class="stat-grid">
         <div class="stat-card reveal">
             <p class="label">Penjualan Mobil</p>
-            <p class="num">Rp <?= number_format($total_mobil, 0, ',', '.') ?></p>
+            <p class="num"><?= ypj_rupiah($total_mobil) ?></p>
         </div>
         <div class="stat-card reveal">
             <p class="label">Penjualan Sparepart</p>
-            <p class="num">Rp <?= number_format($total_sparepart, 0, ',', '.') ?></p>
+            <p class="num"><?= ypj_rupiah($total_sparepart) ?></p>
         </div>
         <div class="stat-card reveal">
             <p class="label">Pendapatan Jasa Servis</p>
-            <p class="num">Rp <?= number_format($total_jasa, 0, ',', '.') ?></p>
+            <p class="num"><?= ypj_rupiah($total_jasa) ?></p>
         </div>
         <div class="stat-card reveal">
             <p class="label">Servis Selesai</p>
@@ -99,15 +103,32 @@ require_once '../includes/header.php';
         </div>
         <div class="stat-card highlight reveal">
             <p class="label">Total Pendapatan</p>
-            <p class="num">Rp <?= number_format($total_keseluruhan, 0, ',', '.') ?></p>
+            <p class="num"><?= ypj_rupiah($total_keseluruhan) ?></p>
         </div>
     </div>
 
-    <div class="stat-card reveal" style="padding: 2rem; margin-top: 1.5rem;">
-        <h3 style="margin-bottom: 1.5rem;">Distribusi Pendapatan</h3>
-        <div style="max-width: 400px; margin: 0 auto;">
-            <canvas id="chartKeuangan" height="200"></canvas>
-        </div>
+    <div class="dash-panel reveal" style="margin-top: 1.5rem;">
+        <div class="dash-panel-head"><h3>Distribusi Pendapatan</h3></div>
+        <?php if ($total_keseluruhan <= 0): ?>
+            <div class="dash-empty">
+                <strong>Belum ada pemasukan</strong>
+                <span>Tidak ada transaksi selesai pada <?= htmlspecialchars(ypj_month_label($bulan)) ?>.</span>
+            </div>
+        <?php else: ?>
+            <div class="dash-chart" style="max-width: 420px; margin: 0 auto;">
+                <canvas id="chartKeuangan" role="img" aria-label="Diagram distribusi pendapatan mobil, sparepart, dan jasa servis"></canvas>
+            </div>
+            <div class="chart-fallback" id="fallbackKeuangan" hidden style="max-width: 420px; margin: 0 auto;">
+                <table>
+                    <thead><tr><th>Sumber</th><th>Pendapatan</th></tr></thead>
+                    <tbody>
+                        <tr><td>Mobil</td><td><?= ypj_rupiah($total_mobil) ?></td></tr>
+                        <tr><td>Sparepart</td><td><?= ypj_rupiah($total_sparepart) ?></td></tr>
+                        <tr><td>Jasa Servis</td><td><?= ypj_rupiah($total_jasa) ?></td></tr>
+                    </tbody>
+                </table>
+            </div>
+        <?php endif; ?>
     </div>
 
     <div class="table-card reveal">
@@ -134,7 +155,7 @@ require_once '../includes/header.php';
                                     <?= $t['tipe'] == 'jasa' ? 'Jasa Servis' : ucfirst($t['tipe']) ?>
                                 </span>
                             </td>
-                            <td style="text-align: right; font-weight: 600;">Rp <?= number_format($t['jumlah'], 0, ',', '.') ?></td>
+                            <td style="text-align: right; font-weight: 600;"><?= ypj_rupiah($t['jumlah']) ?></td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>
@@ -143,26 +164,40 @@ require_once '../includes/header.php';
     </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<?php if ($total_keseluruhan > 0): ?>
+<script src="/project_PTYangpentingMaju/assets/js/vendor/chart.umd.min.js"></script>
 <script>
-const ctxKeuangan = document.getElementById('chartKeuangan').getContext('2d');
-new Chart(ctxKeuangan, {
-    type: 'doughnut',
-    data: {
-        labels: ['Mobil', 'Sparepart', 'Jasa Servis'],
-        datasets: [{
-            data: [<?= $total_mobil ?>, <?= $total_sparepart ?>, <?= $total_jasa ?>],
-            backgroundColor: ['#2E7DD1', '#F5821F', '#1E7A54'],
-            borderWidth: 0
-        }]
-    },
-    options: {
-        responsive: true,
-        plugins: {
-            legend: { position: 'bottom' }
-        }
+(function () {
+    var canvas = document.getElementById('chartKeuangan');
+    if (typeof Chart === 'undefined') {
+        if (canvas) { var w = canvas.closest('.dash-chart'); if (w) w.style.display = 'none'; }
+        var fb = document.getElementById('fallbackKeuangan');
+        if (fb) fb.hidden = false;
+        return;
     }
-});
+
+    Chart.defaults.font.family = "'Inter', sans-serif";
+    Chart.defaults.color = '#5A6478';
+
+    new Chart(canvas, {
+        type: 'doughnut',
+        data: {
+            labels: ['Mobil', 'Sparepart', 'Jasa Servis'],
+            datasets: [{
+                data: [<?= $total_mobil ?>, <?= $total_sparepart ?>, <?= $total_jasa ?>],
+                backgroundColor: ['#2E7DD1', '#F5821F', '#1E7A54'],
+                borderWidth: 0
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: '62%',
+            plugins: { legend: { position: 'bottom' } }
+        }
+    });
+})();
 </script>
+<?php endif; ?>
 
 <?php require_once '../includes/footer.php'; ?>

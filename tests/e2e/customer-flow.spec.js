@@ -53,8 +53,18 @@ test.describe('Alur utama Customer', () => {
       await page.goto('katalog_sparepart.php');
       await expect(page.locator('h2.auto-section-title')).toContainText('Sparepart');
 
-      await page.locator('a:has-text("Lihat Detail")').first().click();
-      await expect(page).toHaveURL(/detail_sparepart\.php\?id=\d+/);
+      const cards = page.locator('.auto-cat-card');
+      const total = await cards.count();
+      let found = false;
+
+      for (let i = 0; i < total && !found; i++) {
+        await page.goto('katalog_sparepart.php');
+        await cards.nth(i).getByText('Lihat Detail').click();
+        await expect(page).toHaveURL(/detail_sparepart\.php\?id=\d+/);
+        found = (await page.locator('button[name="tambah_keranjang"]').count()) > 0;
+      }
+
+      expect(found, 'butuh minimal satu sparepart dengan stok tersedia').toBeTruthy();
       await expect(page.getByText('Spesifikasi & Kompatibilitas')).toBeVisible();
 
       await page.click('button[name="tambah_keranjang"]');

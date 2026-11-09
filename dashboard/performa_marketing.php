@@ -1,9 +1,13 @@
 <?php
 require_once '../config/database.php';
+require_once '../includes/dashboard_data.php';
 
 cek_role(['owner']);
 
 $bulan = $_GET['bulan'] ?? date('Y-m');
+if (!ypj_valid_month($bulan)) {
+    $bulan = date('Y-m');
+}
 
 $stmt = $pdo->prepare("
     SELECT u.id, u.nama,
@@ -28,13 +32,16 @@ $stmt_total = $pdo->prepare("
     SELECT COUNT(*) FROM chat_room WHERE role_staff = 'marketing' AND DATE_FORMAT(waktu_mulai, '%Y-%m') = ?
 ");
 $stmt_total->execute([$bulan]);
-$total_chat_bulan = $stmt_total->fetchColumn();
+$total_chat_bulan = (int)$stmt_total->fetchColumn();
 
 $stmt_berhasil = $pdo->prepare("
     SELECT COUNT(*) FROM pengajuan_beli_mobil WHERE status = 'selesai' AND DATE_FORMAT(waktu, '%Y-%m') = ?
 ");
 $stmt_berhasil->execute([$bulan]);
-$total_berhasil_bulan = $stmt_berhasil->fetchColumn();
+$total_berhasil_bulan = (int)$stmt_berhasil->fetchColumn();
+
+$chart_labels = array_map(fn($p) => $p['nama'], $performa);
+$chart_values = array_map(fn($p) => $p['total_chat'] > 0 ? round(($p['pengajuan_berhasil'] / $p['total_chat']) * 100, 1) : 0, $performa);
 
 require_once '../includes/header.php';
 ?>
@@ -44,7 +51,7 @@ require_once '../includes/header.php';
         <h2>Performa Marketing</h2>
         <form method="GET" action="" style="display: flex; gap: 0.5rem; align-items: center;">
             <label style="font-weight: 500;">Bulan:</label>
-            <input type="month" name="bulan" value="<?= $bulan ?>" style="padding: 0.5rem; border: 1px solid #C4CBD8; border-radius: 8px;">
+            <input type="month" name="bulan" value="<?= htmlspecialchars($bulan) ?>" style="padding: 0.5rem; border: 1px solid #C4CBD8; border-radius: 8px;">
             <button type="submit" class="btn" style="padding: 0.5rem 1rem;">Tampilkan</button>
         </form>
     </div>
@@ -60,9 +67,29 @@ require_once '../includes/header.php';
         </div>
     </div>
 
-    <div class="stat-card reveal" style="padding: 2rem; margin-top: 1.5rem;">
-        <h3 style="margin-bottom: 1.5rem;">Grafik Konversi per Marketing</h3>
-        <canvas id="chartKonversi" height="120"></canvas>
+    <div class="dash-panel reveal" style="margin-top: 1.5rem;">
+        <div class="dash-panel-head"><h3>Grafik Konversi per Marketing</h3></div>
+        <?php if (empty($performa)): ?>
+            <div class="dash-empty">
+                <strong>Belum ada data marketing</strong>
+                <span>Belum ada aktivitas marketing pada <?= htmlspecialchars(ypj_month_label($bulan)) ?>.</span>
+            </div>
+        <?php else: ?>
+            <div class="dash-chart sm"><canvas id="chartKonversi" role="img" aria-label="Grafik persentase konversi closing per marketing"></canvas></div>
+            <div class="chart-fallback" id="fallbackKonversi" hidden>
+                <table>
+                    <thead><tr><th>Marketing</th><th>Konversi</th></tr></thead>
+                    <tbody>
+                        <?php foreach ($performa as $p): ?>
+                            <tr>
+                                <td><?= htmlspecialchars($p['nama']) ?></td>
+                                <td><?= $p['total_chat'] > 0 ? round(($p['pengajuan_berhasil'] / $p['total_chat']) * 100, 1) : 0 ?>%</td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php endif; ?>
     </div>
 
     <div class="table-card reveal">
@@ -89,10 +116,10 @@ require_once '../includes/header.php';
                             <?php $konversi = $p['total_chat'] > 0 ? round(($p['pengajuan_berhasil'] / $p['total_chat']) * 100, 1) : 0; ?>
                             <tr>
                                 <td><?= htmlspecialchars($p['nama']) ?></td>
-                                <td style="text-align: center;"><?= $p['total_chat'] ?></td>
-                                <td style="text-align: center;"><?= $p['chat_selesai'] ?></td>
-                                <td style="text-align: center;"><?= $p['total_pengajuan'] ?></td>
-                                <td style="text-align: center;"><?= $p['pengajuan_berhasil'] ?></td>
+                                <td style="text-align: center;"><?= (int)$p['total_chat'] ?></td>
+                                <td style="text-align: center;"><?= (int)$p['chat_selesai'] ?></td>
+                                <td style="text-align: center;"><?= (int)$p['total_pengajuan'] ?></td>
+                                <td style="text-align: center;"><?= (int)$p['pengajuan_berhasil'] ?></td>
                                 <td style="text-align: center;">
                                     <span class="status-badge <?= $konversi >= 50 ? 'selesai' : ($konversi >= 25 ? 'menunggu' : 'ditolak') ?>">
                                         <?= $konversi ?>%
@@ -107,27 +134,45 @@ require_once '../includes/header.php';
     </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<?php if (!empty($performa)): ?>
+<script src="/project_PTYangpentingMaju/assets/js/vendor/chart.umd.min.js"></script>
 <script>
-const ctxKonversi = document.getElementById('chartKonversi').getContext('2d');
-new Chart(ctxKonversi, {
-    type: 'bar',
-    data: {
-        labels: <?= json_encode(array_map(fn($p) => $p['nama'], $performa)) ?>,
-        datasets: [{
-            label: 'Konversi (%)',
-            data: <?= json_encode(array_map(fn($p) => $p['total_chat'] > 0 ? round(($p['pengajuan_berhasil'] / $p['total_chat']) * 100, 1) : 0, $performa)) ?>,
-            backgroundColor: '#2E7DD1',
-            borderRadius: 4,
-            maxBarThickness: 64
-        }]
-    },
-    options: {
-        responsive: true,
-        plugins: { legend: { display: false } },
-        scales: { y: { beginAtZero: true, max: 100, ticks: { callback: v => v + '%' } } }
+(function () {
+    var canvas = document.getElementById('chartKonversi');
+    if (typeof Chart === 'undefined') {
+        if (canvas) { var w = canvas.closest('.dash-chart'); if (w) w.style.display = 'none'; }
+        var fb = document.getElementById('fallbackKonversi');
+        if (fb) fb.hidden = false;
+        return;
     }
-});
+
+    Chart.defaults.font.family = "'Inter', sans-serif";
+    Chart.defaults.color = '#5A6478';
+
+    new Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels: <?= json_encode($chart_labels) ?>,
+            datasets: [{
+                label: 'Konversi (%)',
+                data: <?= json_encode(array_map('floatval', $chart_values)) ?>,
+                backgroundColor: '#2E7DD1',
+                borderRadius: 4,
+                maxBarThickness: 64
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { grid: { display: false } },
+                y: { beginAtZero: true, max: 100, ticks: { callback: function (v) { return v + '%'; } } }
+            }
+        }
+    });
+})();
 </script>
+<?php endif; ?>
 
 <?php require_once '../includes/footer.php'; ?>

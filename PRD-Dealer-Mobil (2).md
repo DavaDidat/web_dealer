@@ -329,7 +329,7 @@ Saat meminta AI (misal OpenCode) membuatkan kode berdasarkan PRD ini, beberapa c
 
 ---
 
-## 12. Status Pengerjaan (Update Terakhir: 10 Oktober 2026)
+## 12. Status Pengerjaan (Update Terakhir: 9 November 2026)
 
 ### 12.1 Modul yang Sudah Diimplementasikan
 
@@ -359,6 +359,10 @@ Saat meminta AI (misal OpenCode) membuatkan kode berdasarkan PRD ini, beberapa c
 | Chat Auto-Timeout (5 menit tidak aktif) | Selesai | `api/chat_api.php` (auto-end setelah 5 menit) |
 | Pesan Customer Order History | Selesai | `dashboard/pesanan_saya.php` (dengan badge status) |
 | Konfirmasi Checkout | Selesai | `keranjang.php` (confirm dialog sebelum checkout) |
+| Dashboard semua role (KPI + grafik) | Selesai | `dashboard/index.php`, `includes/dashboard_data.php` |
+| Chart.js lokal (tanpa CDN) | Selesai | `assets/js/vendor/chart.umd.min.js` |
+| Seeder data demo dashboard | Selesai | `seed_demo.php` |
+| E2E test suite (Playwright) | Selesai | `tests/e2e/*.spec.js`, `playwright.config.js` |
 
 ### 12.2 Modul yang Belum Diimplementasikan
 
@@ -440,6 +444,46 @@ Checklist testing tambahan sesi ini:
 
 **100% + extras** — Semua modul PRD tetap selesai, ditambah 9 item sesi 10 Oktober 2026 di atas (staff-only user management, lupa password, seed 10 mobil, refactor dashboard, active navbar, logo, sticky footer, layout detail).
 
+### 12.10 Update Sesi 9 November 2026 — Dashboard Semua Role + Stabilitas Trafik
+
+Perubahan utama sesi ini:
+
+| # | Perubahan | File | Keterangan |
+|---|---|---|---|
+| 1 | Dashboard semua role | `dashboard/index.php`, `includes/dashboard_data.php` | Dashboard kini menampilkan widget ringkasan sesuai role, bukan hanya kartu menu. Data diambil lewat helper terpusat: `ownerStats()`, `customerStats()`, `gudangStats()`, `marketingStats()`, `adminServisStats()`, `teknisiStats()` |
+| 2 | Dashboard Owner | `dashboard/index.php` | Filter periode bulan (`?bulan=YYYY-MM`, divalidasi `ypj_valid_month()`), KPI total pendapatan/penjualan mobil/sparepart/jasa servis, grafik trafik penjualan harian (mobil + sparepart), distribusi pendapatan (doughnut), keramaian servis harian, top marketing, dan transaksi terbaru |
+| 3 | Dashboard Customer | `dashboard/index.php` | KPI pesanan mobil, pesanan sparepart, servis mendatang, belanja bulan ini; panel jadwal servis terdekat, pesanan terbaru, dan aksi cepat (katalog mobil/sparepart, booking servis, chat) |
+| 4 | Dashboard Admin Gudang | `dashboard/index.php` | Total stok mobil & sparepart, jumlah item stok menipis (<5), daftar stok menipis, log perubahan stok terbaru, aksi cepat kelola stok |
+| 5 | Dashboard Marketing | `dashboard/index.php` | Antrian chat, chat aktif, pengajuan menunggu, chat bulan ini, closing bulan ini, dan aksi cepat ke antrian/chat aktif/pengajuan |
+| 6 | Dashboard Admin Servis | `dashboard/index.php` | Jadwal hari ini, jadwal belum di-assign, servis berjalan, transaksi sparepart menunggu, daftar jadwal hari ini, dan aksi cepat |
+| 7 | Dashboard Teknisi | `dashboard/index.php` | Jadwal hari ini, pekerjaan berjalan, servis selesai bulan ini, pendapatan jasa bulan ini, dan daftar pekerjaan |
+| 8 | Perbaikan bug trafik Owner | `dashboard/laporan_penjualan.php`, `dashboard/laporan_keuangan.php`, `dashboard/performa_marketing.php`, `includes/dashboard_data.php` | Chart.js tidak lagi dari CDN (dimuat lokal), seri harian di-zero-fill 1..jumlah hari, transaksi `dibatalkan` dikecualikan, nilai numerik di-cast sebelum `json_encode`, dan parameter bulan divalidasi |
+| 9 | Fallback & empty state grafik | `dashboard/index.php`, 3 halaman laporan, `assets/css/style.css` | Jika Chart.js gagal dimuat, tabel fallback ditampilkan. Jika belum ada data, empty state tampil (bukan kanvas kosong). Ditambah `.visually-hidden` untuk caption tabel |
+| 10 | Chart.js lokal | `assets/js/vendor/chart.umd.min.js` | Chart.js 4.4.0 disimpan di repo agar dashboard tidak bergantung pada CDN |
+| 11 | Styling dashboard | `assets/css/style.css` | Kelas baru `.dash-wrap`, `.dash-kpi-grid`, `.dash-kpi`, `.dash-cols`, `.dash-panel`, `.dash-chart`, `.chart-fallback`, `.dash-empty`, `.dash-list`, `.dash-actions`, `.dash-filter`, `.trend-up/.trend-down`, serta media query 900px |
+| 12 | Seeder data demo | `seed_demo.php` | Idempoten (guard `catatan LIKE '[DEMO]%'`), membuat akun `customer@dealer.com` / `password123`, data pengajuan mobil, transaksi sparepart, servis, dan chat untuk 3 bulan terakhir. Data ditandai `[DEMO]` dan tidak mengubah stok fisik |
+| 13 | Perbaikan E2E customer flow | `tests/e2e/customer-flow.spec.js` | Test tidak lagi selalu memilih sparepart pertama (yang bisa habis stok); test memilih kartu pertama yang masih menampilkan tombol "Tambah ke Keranjang" |
+
+**Verifikasi sesi ini:**
+- `php -l` lulus untuk seluruh file PHP yang diubah.
+- Render dashboard 6 role (owner, customer, admin_gudang, marketing, admin_servis, teknisi) tanpa warning/notice.
+- `npm run test:e2e` → **15/15 test lulus**.
+- Data demo owner November 2026: total pendapatan ± Rp 1.294.625.000; customer demo belanja bulan ini ± Rp 1.293.630.000.
+- `seed_demo.php` sudah dijalankan di DB lokal (akun `customer@dealer.com` / `password123`).
+- Parameter bulan tidak valid (mis. `2026-13`) otomatis fallback ke bulan berjalan.
+
+**Cara menjalankan ulang:**
+```
+php seed.php
+php seed_users.php
+php seed_demo.php   # opsional, mengisi data demo dashboard
+npm run test:e2e    # butuh MySQL + Apache/Laragon berjalan
+```
+
+### 12.11 Total Progress (per 9 November 2026)
+
+**100% + extras** — Seluruh modul PRD selesai, ditambah dashboard kaya data untuk 6 role, Chart.js lokal tanpa CDN, fallback/empty state, filter periode owner, seeder demo idempoten, dan suite E2E 15 test yang lulus.
+
 ---
 
 ## 13. Panduan Testing Manual
@@ -447,15 +491,17 @@ Checklist testing tambahan sesi ini:
 ### Persiapan
 
 1. Import `database.sql` ke phpMyAdmin (database `dealer_mobil`)
-2. Jalankan `seed.php` dan `seed_users.php` untuk data dummy
-3. Login semua akun menggunakan password `password123`:
+2. Jalankan `php seed.php` dan `php seed_users.php` untuk data dummy
+3. Opsional: jalankan `php seed_demo.php` untuk mengisi dashboard dengan data 3 bulan terakhir (akun `customer@dealer.com` / `password123`)
+4. Login semua akun menggunakan password `password123`:
    - `gudang@dealer.com` (Admin Gudang)
    - `marketing@dealer.com` (Marketing)
    - `teknisi@dealer.com` (Teknisi)
    - `servis@dealer.com` (Admin Servis)
    - `owner@dealer.com` (Owner)
-4. Daftar akun customer baru via `auth/register.php`
-5. Gunakan 2 browser berbeda untuk simulasi customer & staff secara bersamaan
+5. Daftar akun customer baru via `auth/register.php`
+6. Gunakan 2 browser berbeda untuk simulasi customer & staff secara bersamaan
+7. Untuk regression test otomatis: pastikan MySQL & Apache/Laragon berjalan, lalu jalankan `npm run test:e2e` (15 test Playwright)
 
 ### Checklist Testing Per Modul
 
@@ -507,6 +553,18 @@ Checklist testing tambahan sesi ini:
 - [ ] Laporan penjualan: grafik mobil & sparepart per bulan
 - [ ] Performa marketing: tabel dengan konversi
 - [ ] Laporan keuangan: total pendapatan & riwayat transaksi
+- [ ] Dashboard owner menampilkan KPI total pendapatan, penjualan mobil/sparepart, jasa servis
+- [ ] Filter periode dashboard owner berfungsi (`?bulan=YYYY-MM`) dan bulan tidak valid fallback ke bulan berjalan
+- [ ] Grafik trafik, distribusi pendapatan, keramaian servis, dan top marketing tampil (atau empty state jika belum ada data)
+
+**Dashboard Semua Role**
+- [ ] Admin Gudang: total stok, item stok menipis (<5), dan log stok terbaru tampil
+- [ ] Marketing: antrian chat, chat aktif, pengajuan menunggu, chat & closing bulan ini tampil
+- [ ] Admin Servis: jadwal hari ini, belum di-assign, servis berjalan, sparepart menunggu tampil
+- [ ] Teknisi: jadwal hari ini, pekerjaan berjalan, servis selesai & jasa bulan ini tampil
+- [ ] Customer: pesanan mobil/sparepart, servis mendatang, belanja bulan ini, dan aksi cepat tampil
+- [ ] Jika Chart.js gagal dimuat, tabel fallback tampil (bukan area kosong)
+- [ ] Grafik memakai Chart.js lokal dari `assets/js/vendor/chart.umd.min.js` (tanpa request ke CDN)
 
 **Sistem**
 - [ ] Chat auto-timeout 5 menit
